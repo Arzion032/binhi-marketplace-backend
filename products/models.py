@@ -18,10 +18,11 @@ class Category(models.Model):
 
 class Product(models.Model):
     STATUS_CHOICES = (
-        ('draft', 'Draft'),
         ('published', 'Published'),
         ('out_of_stock', 'Out of Stock'),
-        ('archived', 'Archived'),
+        ('hidden', 'Hidden'),
+        ('pending_approval', 'Pending Approval'),
+        ('deleted', 'Deleted'),
     )
 
     name = models.CharField(max_length=200)
@@ -31,7 +32,7 @@ class Product(models.Model):
     stock = models.PositiveIntegerField(default=0)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
     vendor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='products')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='published')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_available = models.BooleanField(default=True)
@@ -115,6 +116,9 @@ class OrderStatusHistory(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='status_history')
     status = models.CharField(max_length=20, choices=Order.STATUS_CHOICES)
     changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'Order status histories'
 
     def __str__(self):
         return f'Status change for Order #{self.order.id}'
