@@ -1,60 +1,60 @@
 from django.contrib import admin
-from .models import Category, Product, Review, Cart, CartItem, Order, OrderItem
+from .models import (
+    Category, Product, ProductImage, Cart, Order, 
+    OrderItem, OrderStatusHistory, MarketTransaction, Review
+)
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'created_at')
-    prepopulated_fields = {'slug': ('name',)}
-    search_fields = ('name',)
+    list_display = ('name', 'created_at', 'updated_at')
+    search_fields = ('name', 'description')
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'price', 'stock', 'is_available')
-    list_filter = ('category', 'is_available')
-    prepopulated_fields = {'slug': ('name',)}
-    search_fields = ('name', 'description')
-    list_editable = ('price', 'stock', 'is_available')
+    list_display = ('name', 'vendor', 'category', 'price', 'stock', 'status')
+    list_filter = ('status', 'category', 'vendor')
+    search_fields = ('name', 'description', 'vendor__username')
 
-@admin.register(Review)
-class ReviewAdmin(admin.ModelAdmin):
-    list_display = ('product', 'user', 'rating', 'created_at')
-    list_filter = ('rating', 'created_at')
-    search_fields = ('product__name', 'user__username', 'comment')
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
 
-class CartItemInline(admin.TabularInline):
-    model = CartItem
-    extra = 0
-    raw_id_fields = ('product',)
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ('product', 'image_url', 'uploaded_at')
+    search_fields = ('product__name',)
 
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
-    list_display = ('user', 'created_at')
-    inlines = [CartItemInline]
-    search_fields = ('user__username',)
-
-@admin.register(CartItem)
-class CartItemAdmin(admin.ModelAdmin):
-    list_display = ('cart', 'product', 'quantity', 'created_at')
-    list_filter = ('created_at',)
-    search_fields = ('cart__user__username', 'product__name')
-    raw_id_fields = ('cart', 'product')
-
-class OrderItemInline(admin.TabularInline):
-    model = OrderItem
-    extra = 0
-    raw_id_fields = ('product',)
+    list_display = ('user', 'product', 'quantity', 'added_at')
+    list_filter = ('added_at',)
+    search_fields = ('user__username', 'product__name')
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'status', 'total_amount', 'created_at')
+    list_display = ('id', 'buyer', 'status', 'total_price', 'created_at')
     list_filter = ('status', 'created_at')
-    search_fields = ('user__username', 'shipping_address')
-    inlines = [OrderItemInline]
-    list_editable = ('status',)
+    search_fields = ('buyer__username',)
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ('order', 'product', 'quantity', 'price', 'created_at')
-    list_filter = ('created_at',)
-    search_fields = ('order__user__username', 'product__name')
-    raw_id_fields = ('order', 'product') 
+    list_display = ('order', 'product', 'quantity', 'price', 'subtotal')
+    search_fields = ('order__buyer__username', 'product__name')
+
+@admin.register(OrderStatusHistory)
+class OrderStatusHistoryAdmin(admin.ModelAdmin):
+    list_display = ('order', 'status', 'changed_at')
+    list_filter = ('status', 'changed_at')
+    search_fields = ('order__buyer__username',)
+
+@admin.register(MarketTransaction)
+class MarketTransactionAdmin(admin.ModelAdmin):
+    list_display = ('order', 'buyer', 'seller', 'payment_method', 'total_amount', 'status', 'created_at')
+    list_filter = ('status', 'payment_method', 'created_at')
+    search_fields = ('buyer__username', 'seller__username')
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ('product', 'buyer', 'rating', 'created_at')
+    list_filter = ('rating', 'created_at')
+    search_fields = ('product__name', 'buyer__username', 'comment') 
