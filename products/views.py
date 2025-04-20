@@ -1,3 +1,5 @@
+from rest_framework.decorators import api_view
+from .supabase_client import supabase  # Ensure this client is properly set up
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -26,17 +28,14 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Product.objects.all()
         
-        # Filter by category
         category = self.request.query_params.get('category', None)
         if category is not None:
             queryset = queryset.filter(category_id=category)
             
-        # Filter by vendor
         vendor = self.request.query_params.get('vendor', None)
         if vendor is not None:
             queryset = queryset.filter(vendor_id=vendor)
             
-        # Search by name or description
         search = self.request.query_params.get('search', None)
         if search is not None:
             queryset = queryset.filter(
@@ -44,7 +43,6 @@ class ProductViewSet(viewsets.ModelViewSet):
                 models.Q(description__icontains=search)
             )
             
-        # Filter by price range
         min_price = self.request.query_params.get('min_price', None)
         max_price = self.request.query_params.get('max_price', None)
         if min_price is not None:
@@ -52,7 +50,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         if max_price is not None:
             queryset = queryset.filter(price__lte=max_price)
             
-        # Filter by stock
         min_stock = self.request.query_params.get('min_stock', None)
         if min_stock is not None:
             queryset = queryset.filter(stock__gte=min_stock)
@@ -117,4 +114,14 @@ class MarketTransactionViewSet(viewsets.ModelViewSet):
         user_id = self.request.user.id
         return MarketTransaction.objects.filter(
             models.Q(buyer_id=user_id) | models.Q(seller_id=user_id)
-        ) 
+        )
+
+# ✅ Supabase test endpoint
+@api_view(['GET'])
+def test_supabase_connection(request):
+    try:
+        # Replace "products" with the actual name of your Supabase table
+        response = supabase.table("products").select("*").limit(1).execute()
+        return Response(response.data, status=200)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)

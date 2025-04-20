@@ -74,11 +74,10 @@ class MarketTransactionAdmin(admin.ModelAdmin):
     list_filter = ('status', 'created_at')
     search_fields = ('order__id', 'buyer__username', 'seller__username')
 
-# Registering models
+
 admin.site.register(Category, CategoryAdmin)
 admin.site.register(Product, ProductAdmin)
-admin.site.register(ProductImage)  # Optional if needed in admin
-admin.site.register(Review, ReviewAdmin)
+admin.site.register(ProductImage)
 admin.site.register(Cart, CartAdmin)
 admin.site.register(CartItem, CartItemAdmin)
 admin.site.register(Order, OrderAdmin)

@@ -4,7 +4,7 @@ from .views import (
     CategoryViewSet, ProductViewSet, ProductImageViewSet,
     ReviewViewSet, CartViewSet, OrderViewSet,
     OrderItemViewSet, OrderStatusHistoryViewSet,
-    MarketTransactionViewSet
+    MarketTransactionViewSet, test_supabase_connection
 )
 
 router = DefaultRouter()
@@ -20,4 +20,5 @@ router.register(r'transactions', MarketTransactionViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('supabase-test/', test_supabase_connection),
 ] 
