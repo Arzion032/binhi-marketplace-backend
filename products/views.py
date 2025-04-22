@@ -1,18 +1,12 @@
-from rest_framework.decorators import api_view
-from .supabase_client import supabase  # Ensure this client is properly set up
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import models
 from django.shortcuts import get_object_or_404
-from .models import (
-    Product, Category, Cart, Order, OrderItem,
-    ProductImage, Review, MarketTransaction, OrderStatusHistory
-)
+from .models import Product, Category, ProductImage, Review
 from .serializers import (
-    ProductSerializer, CategorySerializer, CartSerializer,
-    OrderSerializer, OrderItemSerializer, ProductImageSerializer,
-    ReviewSerializer, MarketTransactionSerializer, OrderStatusHistorySerializer
+    ProductSerializer, CategorySerializer,
+    ProductImageSerializer, ReviewSerializer
 )
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -56,46 +50,22 @@ class ProductViewSet(viewsets.ModelViewSet):
             
         return queryset
 
+    def perform_create(self, serializer):
+        serializer.save(vendor=self.request.user)
+
 class ProductImageViewSet(viewsets.ModelViewSet):
     queryset = ProductImage.objects.all()
     serializer_class = ProductImageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-class CartViewSet(viewsets.ModelViewSet):
-    serializer_class = CartSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Cart.objects.filter(user_id=self.request.user.id)
-
     def perform_create(self, serializer):
-        serializer.save(user_id=self.request.user.id)
-
-class OrderViewSet(viewsets.ModelViewSet):
-    serializer_class = OrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Order.objects.filter(buyer_id=self.request.user.id)
-
-    def perform_create(self, serializer):
-        serializer.save(buyer_id=self.request.user.id)
-
-class OrderItemViewSet(viewsets.ModelViewSet):
-    queryset = OrderItem.objects.all()
-    serializer_class = OrderItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return OrderItem.objects.filter(order__buyer_id=self.request.user.id)
-
-class OrderStatusHistoryViewSet(viewsets.ModelViewSet):
-    queryset = OrderStatusHistory.objects.all()
-    serializer_class = OrderStatusHistorySerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return OrderStatusHistory.objects.filter(order__buyer_id=self.request.user.id)
+        product = get_object_or_404(Product, id=self.request.data.get('product'))
+        if product.vendor != self.request.user:
+            return Response(
+                {"error": "You can only add images to your own products"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer.save()
 
 class ReviewViewSet(viewsets.ModelViewSet):
     queryset = Review.objects.all()
@@ -103,25 +73,4 @@ class ReviewViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def perform_create(self, serializer):
-        serializer.save(buyer_id=self.request.user.id)
-
-class MarketTransactionViewSet(viewsets.ModelViewSet):
-    queryset = MarketTransaction.objects.all()
-    serializer_class = MarketTransactionSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        user_id = self.request.user.id
-        return MarketTransaction.objects.filter(
-            models.Q(buyer_id=user_id) | models.Q(seller_id=user_id)
-        )
-
-# ✅ Supabase test endpoint
-@api_view(['GET'])
-def test_supabase_connection(request):
-    try:
-        # Replace "products" with the actual name of your Supabase table
-        response = supabase.table("products").select("*").limit(1).execute()
-        return Response(response.data, status=200)
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        serializer.save(buyer=self.request.user)
