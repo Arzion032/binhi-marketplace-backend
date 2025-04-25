@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from user.models import CustomUser
 from django.core.validators import MinValueValidator, MaxValueValidator
 import uuid
 
@@ -33,7 +33,7 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField(default=0)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
-    vendor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='products')
+    vendor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='products')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='published')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -54,7 +54,7 @@ class ProductImage(models.Model):
 class Review(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
-    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='product_reviews')
+    buyer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='product_reviews')
     rating = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
