@@ -53,6 +53,28 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(vendor=self.request.user)
 
+    @action(detail=True, methods=['get'])
+    def details(self, request, pk=None):
+        product = self.get_object()
+        serializer = self.get_serializer(product)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def same_category(self, request, pk=None):
+        product = self.get_object()
+        same_category_products = Product.objects.filter(
+            category=product.category
+        ).exclude(id=product.id)
+        serializer = self.get_serializer(same_category_products, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def product_reviews(self, request, pk=None):
+        product = self.get_object()
+        reviews = product.reviews.all()
+        serializer = ReviewSerializer(reviews, many=True)
+        return Response(serializer.data)
+
 class ProductImageViewSet(viewsets.ModelViewSet):
     queryset = ProductImage.objects.all()
     serializer_class = ProductImageSerializer

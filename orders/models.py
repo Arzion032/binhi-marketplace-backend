@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.conf import settings
 from products.models import Product
 import uuid
 
@@ -13,7 +13,7 @@ class Order(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     shipping_address = models.TextField()
@@ -62,8 +62,8 @@ class MarketTransaction(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='transaction')
-    buyer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='purchases')
-    seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sales')
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='purchases')
+    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sales')
     payment_method = models.CharField(max_length=50)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -71,4 +71,4 @@ class MarketTransaction(models.Model):
     ended_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f'Transaction for Order {self.order.id}'
+        return f'Transaction {self.id} for Order {self.order.id}'
