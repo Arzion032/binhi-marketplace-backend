@@ -1,6 +1,6 @@
-from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from django.db import models
 from django.shortcuts import get_object_or_404
 from .models import Product, Category, ProductImage, Review
@@ -9,16 +9,21 @@ from .serializers import (
     ProductImageSerializer, ReviewSerializer
 )
 
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all()
+class CategoryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'id'
+
+class ProductListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    
+
     def get_queryset(self):
         queryset = Product.objects.all()
         
@@ -53,29 +58,37 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(vendor=self.request.user)
 
-    @action(detail=True, methods=['get'])
-    def details(self, request, pk=None):
-        product = self.get_object()
-        serializer = self.get_serializer(product)
-        return Response(serializer.data)
+class ProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'id'
 
-    @action(detail=True, methods=['get'])
-    def same_category(self, request, pk=None):
-        product = self.get_object()
-        same_category_products = Product.objects.filter(
-            category=product.category
-        ).exclude(id=product.id)
-        serializer = self.get_serializer(same_category_products, many=True)
-        return Response(serializer.data)
+class ProductDetailsView(generics.RetrieveAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'id'
 
-    @action(detail=True, methods=['get'])
-    def product_reviews(self, request, pk=None):
-        product = self.get_object()
-        reviews = product.reviews.all()
-        serializer = ReviewSerializer(reviews, many=True)
-        return Response(serializer.data)
+class SameCategoryProductsView(generics.ListAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-class ProductImageViewSet(viewsets.ModelViewSet):
+    def get_queryset(self):
+        product_id = self.kwargs.get('id')
+        product = get_object_or_404(Product, id=product_id)
+        return Product.objects.filter(category=product.category).exclude(id=product.id)
+
+class ProductReviewsView(generics.ListAPIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        product_id = self.kwargs.get('id')
+        product = get_object_or_404(Product, id=product_id)
+        return product.reviews.all()
+
+class ProductImageListCreateView(generics.ListCreateAPIView):
     queryset = ProductImage.objects.all()
     serializer_class = ProductImageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
@@ -89,10 +102,22 @@ class ProductImageViewSet(viewsets.ModelViewSet):
             )
         serializer.save()
 
-class ReviewViewSet(viewsets.ModelViewSet):
+class ProductImageRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = ProductImage.objects.all()
+    serializer_class = ProductImageSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'id'
+
+class ReviewListCreateView(generics.ListCreateAPIView):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def perform_create(self, serializer):
         serializer.save(buyer=self.request.user)
+
+class ReviewRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    lookup_field = 'id'
