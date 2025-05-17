@@ -1,18 +1,46 @@
 from django.db import models
-from users.models import CustomUser
 from django.core.validators import MinValueValidator, MaxValueValidator
+from users.models import CustomUser
+from django.utils.text import slugify
 import uuid
+
+def generate_unique_slug(instance, field_value, slug_field_name='slug'):
+    """
+    Generate a unique slug for a model instance.
+    """
+    base_slug = slugify(field_value)
+    slug = base_slug
+    ModelClass = instance.__class__
+    n = 1
+
+    # Check for duplicates
+    while ModelClass.objects.filter(**{slug_field_name: slug}).exclude(pk=instance.pk).exists():
+        slug = f"{base_slug}-{n}"
+        n += 1
+
+    return slug
 
 class Category(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100)
-    slug = models.SlugField(unique=True)
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(unique=True, blank=True,null=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name_plural = 'Categories'
+        
+    def name_has_changed(self):
+        if not self.pk:
+            return True
+        original = Category.objects.filter(pk=self.pk).first()
+        return original and original.name != self.name
+        
+    def save(self, *args, **kwargs):
+        if not self.slug or self.name_has_changed():
+            self.slug = generate_unique_slug(self, self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -24,16 +52,22 @@ class Product(models.Model):
         ('hidden', 'Hidden'),
         ('pending_approval', 'Pending Approval'),
         ('deleted', 'Deleted'),
+        ('rejected', 'Rejected')
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(unique=True, blank=True, null=True)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField(default=0)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
-    vendor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='products')
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products', blank=True, null=True)
+    vendor = models.ForeignKey(
+        'users.CustomUser',
+        on_delete=models.CASCADE,
+        limit_choices_to={'role': 'farmer'},  # Assuming 'farmer' is your vendor role
+        related_name='products'
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='published')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -41,6 +75,17 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name
+    
+    def save(self, *args, **kwargs):
+        if not self.slug or self.name_has_changed():
+            self.slug = generate_unique_slug(self, self.name)
+        super().save(*args, **kwargs)
+
+    def name_has_changed(self):
+        if not self.pk:
+            return True
+        original = Product.objects.filter(pk=self.pk).first()
+        return original and original.name != self.name
 
 class ProductImage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

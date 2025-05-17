@@ -1,123 +1,118 @@
 from rest_framework import generics, permissions, status
+from rest_framework.permissions import IsAuthenticated
+from users.permissions import IsFarmer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import models
 from django.shortcuts import get_object_or_404
 from .models import Product, Category, ProductImage, Review
-from .serializers import (
-    ProductSerializer, CategorySerializer,
-    ProductImageSerializer, ReviewSerializer
-)
+from .serializers import ProductDetailSerializer, ProductSerializer
 
-class CategoryListCreateView(generics.ListCreateAPIView):
-    queryset = Category.objects.all()
-    serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-class CategoryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Category.objects.all()
-    serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    lookup_field = 'id'
+class ProductDetailView(APIView):
+    def get(self, request, slug):
+        product = get_object_or_404(Product.objects.select_related('category'), slug=slug)
 
-class ProductListCreateView(generics.ListCreateAPIView):
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+        # Get product reviews
+        reviews = product.reviews.all()
 
-    def get_queryset(self):
-        queryset = Product.objects.all()
+        # Get related products (same category, excluding itself)
+        related_products = Product.objects.filter(category=product.category).exclude(id=product.id)[:4]
+
+        data = {
+            'product': product,
+            'reviews': reviews,
+            'related_products': related_products
+        }
         
-        category = self.request.query_params.get('category', None)
-        if category is not None:
-            queryset = queryset.filter(category_id=category)
-            
-        vendor = self.request.query_params.get('vendor', None)
-        if vendor is not None:
-            queryset = queryset.filter(vendor_id=vendor)
-            
-        search = self.request.query_params.get('search', None)
-        if search is not None:
-            queryset = queryset.filter(
-                models.Q(name__icontains=search) | 
-                models.Q(description__icontains=search)
-            )
-            
-        min_price = self.request.query_params.get('min_price', None)
-        max_price = self.request.query_params.get('max_price', None)
-        if min_price is not None:
-            queryset = queryset.filter(price__gte=min_price)
-        if max_price is not None:
-            queryset = queryset.filter(price__lte=max_price)
-            
-        min_stock = self.request.query_params.get('min_stock', None)
-        if min_stock is not None:
-            queryset = queryset.filter(stock__gte=min_stock)
-            
-        return queryset
+        serializer = ProductDetailSerializer(data)
+        return Response(serializer.data)
+    
+    
+class CreateProductView(APIView):
+    permission_classes = [IsAuthenticated, IsFarmer]
+    def post(self, request):
+        product_data = request.data.copy()
+        product_data['vendor'] = request.user.id
+        product_data['status'] = 'hidden'
+        
+        images = request.FILES.getlist('images')
 
-    def perform_create(self, serializer):
-        serializer.save(vendor=self.request.user)
+        serializer = ProductSerializer(data=product_data)
+        if serializer.is_valid():
+            product = serializer.save()
 
-class ProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    lookup_field = 'id'
+            # Save images (if any)
+            for img in images:
+                ProductImage.objects.create(product=product, image_url=img)
 
-class ProductDetailsView(generics.RetrieveAPIView):
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    lookup_field = 'id'
+            response_data = ProductSerializer(product).data
+            return Response(response_data, status=status.HTTP_201_CREATED)
 
-class SameCategoryProductsView(generics.ListAPIView):
-    serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
 
-    def get_queryset(self):
-        product_id = self.kwargs.get('id')
-        product = get_object_or_404(Product, id=product_id)
-        return Product.objects.filter(category=product.category).exclude(id=product.id)
 
-class ProductReviewsView(generics.ListAPIView):
-    serializer_class = ReviewSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+class UpdateProductView(APIView):
+    def patch(self, request, slug):
+        try:
+            product = Product.objects.get(slug=slug)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    def get_queryset(self):
-        product_id = self.kwargs.get('id')
-        product = get_object_or_404(Product, id=product_id)
-        return product.reviews.all()
+        product_data = request.data.copy()
+        new_images = request.FILES.getlist('images')
 
-class ProductImageListCreateView(generics.ListCreateAPIView):
-    queryset = ProductImage.objects.all()
-    serializer_class = ProductImageSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+        serializer = ProductSerializer(product, data=product_data, partial=True)
+        if serializer.is_valid():
+            product = serializer.save()
 
-    def perform_create(self, serializer):
-        product = get_object_or_404(Product, id=self.request.data.get('product'))
-        if product.vendor != self.request.user:
-            return Response(
-                {"error": "You can only add images to your own products"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        serializer.save()
+            # If new images are provided, delete old ones and add new
+            if new_images:
+                product.images.all().delete()  # Assumes related_name='images' in ProductImage model
+                for img in new_images:
+                    ProductImage.objects.create(product=product, image_url=img)
 
-class ProductImageRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ProductImage.objects.all()
-    serializer_class = ProductImageSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    lookup_field = 'id'
+            return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ReviewListCreateView(generics.ListCreateAPIView):
-    queryset = Review.objects.all()
-    serializer_class = ReviewSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+class DeleteProductView(APIView):
+    def delete(self, request, slug):
+        try:
+            product = Product.objects.get(slug=slug)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    def perform_create(self, serializer):
-        serializer.save(buyer=self.request.user)
+        product.delete()
+        return Response({'message': f'Product {product.name} deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+    
+    
+class GetAllProducts(APIView):
 
-class ReviewRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Review.objects.all()
-    serializer_class = ReviewSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    lookup_field = 'id'
+    permission_classes = [IsAuthenticated, IsFarmer]
+    VALID_STATUSES = {
+        'published', 'out_of_stock', 'hidden', 'pending_approval', 'rejected'
+    }
+
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        status = request.query_params.get('status')
+
+      
+        products = Product.objects.all()
+
+        if user_id:
+            products = products.filter(vendor__id=user_id)
+
+       
+        if status and status in self.VALID_STATUSES:
+            products = products.filter(status=status)
+
+        else:
+            products = products.filter(status='published')
+
+
+        print(status)
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+    
