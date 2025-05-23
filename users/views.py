@@ -94,9 +94,6 @@ def signup(request):
             contact_no=serializer.validated_data['contact_no'],
             role='buyer',
             password=request.data.get('password'),
-            is_approved = True,
-            is_active = True,
-            is_rejected = False
         )
         
         # 5. Return serialized user without password
@@ -110,8 +107,7 @@ def signup(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class CustomTokenObtainPairView(TokenObtainPairView):
-
+class Login(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
     def post(self, request, *args, **kwargs):

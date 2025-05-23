@@ -89,7 +89,6 @@ class DeleteProductView(APIView):
     
 class GetAllProducts(APIView):
 
-    permission_classes = [IsAuthenticated, IsFarmer]
     VALID_STATUSES = {
         'published', 'out_of_stock', 'hidden', 'pending_approval', 'rejected'
     }
