@@ -80,7 +80,7 @@ class UpdateCartItem(APIView):
 
     def patch(self, request, item_id):
         cart_item = get_object_or_404(CartItem, product_id=item_id, cart__user=request.user)
-        quantity = request.data.get('quantity')
+        quantity = int(request.data.get('quantity'))
 
         if quantity is None or int(quantity) < 1:
             return Response({"error": "Quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
@@ -124,6 +124,7 @@ class OrderSummaryView(APIView):
 
         response_data = []
         grand_total = 0
+        all_warnings = []
 
         for vendor_id, items in vendor_items.items():
             vendor = items[0].product.vendor
@@ -131,12 +132,26 @@ class OrderSummaryView(APIView):
             sub_total = sum(item.quantity * item.product.unit_price for item in items)
             grand_total += sub_total
 
+            for item_data in serializer.data:
+                if item_data.get("warning_message"):
+                    all_warnings.append({
+                        "product_name": item_data.get("product", {}).get("name"),
+                        "warning": item_data.get("warning_message"),
+                    })
+
             response_data.append({
                 'vendor_id': vendor.id,
                 'vendor_name': getattr(vendor, 'username', str(vendor)),
                 'items': serializer.data,
                 'sub_total': sub_total
             })
+
+        # If there are any warnings, return them as an error
+        if all_warnings:
+            return Response({
+                "error": "Some cart items have issues with quantity vs. stock.",
+                "warnings": all_warnings
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({
             'vendors': response_data,
