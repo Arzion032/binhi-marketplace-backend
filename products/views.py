@@ -11,7 +11,19 @@ from .serializers import ProductDetailSerializer, ProductSerializer, ProductRevi
 from django.db import transaction
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.files.uploadedfile import InMemoryUploadedFile
-import json, io
+import json, io, uuid
+from django.core.exceptions import ValidationError
+
+def validate_uuid_list(uuid_list):
+    valid_uuids = []
+    for item in uuid_list:
+        try:
+            # Attempt to convert each item to a valid UUID
+            valid_uuids.append(str(uuid.UUID(item)))  # str() to avoid any format issues
+        except ValueError:
+            # If conversion fails, skip the invalid UUID
+            continue
+    return valid_uuids
 
 
 class ProductDetailView(APIView):
@@ -73,24 +85,24 @@ class CreateProductView(APIView):
             images = request.FILES.getlist('images')
             has_main = False
             for img in images:
-                # Restrict large images (5MB limit)
-                if img.size > 5 * 1024 * 1024:
+                
+                if img.size > 5 * 1024 * 1024:  # 5MB size limit
                     return Response({"error": "Each image must be <5MB."}, status=400)
 
                 # Open the image
                 image = Image.open(img)
 
-                # Convert RGBA (or any format) to RGB before saving as JPEG
+                # If the image has transparency (RGBA), convert it to RGB or save as PNG if required
                 if image.mode == 'RGBA':
-                    image = image.convert('RGB')
-
-                # Resize image (optional, set the dimensions you need)
-                image = image.resize((800, 800), Image.Resampling.LANCZOS)  # Resize to 800x800 (you can adjust)
-                
-                # Save the image back to memory (in JPEG format)
-                image_io = io.BytesIO()
-                image.save(image_io, format='JPEG')
-                image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
+                    # Save it as PNG to preserve transparency
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='PNG')  # Save as PNG to preserve transparency
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/png', image_io.tell(), None)
+                else:
+                    # If it's not RGBA, just save it as JPEG
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='JPEG')  # Save as JPEG if no transparency
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
 
                 # Check if the image should be marked as main (via 'is_main' field or first image logic)
                 is_main = request.data.get(f'{img.name}_is_main', False)  # Check for 'is_main' flag per image
@@ -131,56 +143,83 @@ class UpdateProductView(APIView):
         product = get_object_or_404(Product, slug=slug)
         product_data = request.data.copy()
         new_images = request.FILES.getlist('images')
-        images_to_delete = request.data.getlist('images_to_delete', [])  # may be empty
 
         with transaction.atomic():
-            # 1. Update product data (fields like name, price, etc.)
+            # 1. Update product fields
             serializer = ProductSerializer(product, data=product_data, partial=True)
             if serializer.is_valid():
                 product = serializer.save()
+            else:
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-                # 2. Delete only requested images (fine-grained)
-                if images_to_delete:
-                    ProductImage.objects.filter(
-                        id__in=images_to_delete,
-                        product=product
+            # 2. Handle image deletion
+            images_to_delete_raw = request.data.get('images_to_delete')
+            print("RAW images_to_delete:", images_to_delete_raw, type(images_to_delete_raw))
+
+            try:
+                images_to_delete = json.loads(images_to_delete_raw) if images_to_delete_raw else []
+            except Exception as e:
+                print("JSON parse error:", e)
+                images_to_delete = []
+            print("After json.loads:", images_to_delete, type(images_to_delete))
+
+            if isinstance(images_to_delete, list) and images_to_delete:
+                valid_image_ids = []
+                for img_id in images_to_delete:
+                    try:
+                        valid_image_ids.append(uuid.UUID(str(img_id)))
+                    except Exception as e:
+                        print(f"Invalid UUID in images_to_delete: {img_id}, error: {e}")
+                print("UUID objects for deletion:", valid_image_ids)
+                if valid_image_ids:
+                    deleted_count, _ = ProductImage.objects.filter(
+                        id__in=valid_image_ids,
+                        product_id=product.id
                     ).delete()
+                    print(f"Deleted {deleted_count} ProductImage(s)")
+                else:
+                    print("No valid UUIDs to delete.")
+            else:
+                print("images_to_delete is not a list or is empty.")
 
-                # 3. Handle image uploads (new images)
-                new_images = request.FILES.getlist('images')
-                has_main = False
-                for img in new_images:
-                    # Optional: Restrict large images (e.g., 5MB limit)
-                    if img.size > 5 * 1024 * 1024:
-                        return Response({"error": "Each image must be <5MB."}, status=400)
+            # 3. Handle image uploads
+            for img in new_images:
+                # Optional: Restrict large images (e.g., 5MB limit)
+                if img.size > 5 * 1024 * 1024:  # 5MB size limit
+                    return Response({"error": "Each image must be <5MB."}, status=400)
 
-                    # Optional: Resize image (you can adjust dimensions)
-                    image = Image.open(img)
-                    image = image.resize((800, 800), Image.Resampling.LANCZOS)  # Resize to 800x800 (adjust as needed)
+                image = Image.open(img)
+                if image.mode == 'RGBA':
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='PNG')
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/png', image_io.tell(), None)
+                else:
                     image_io = io.BytesIO()
                     image.save(image_io, format='JPEG')
                     image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
 
-                    # Check if the image should be marked as main (via 'is_main' field)
-                    is_main = request.data.get(f'{img.name}_is_main', False)
-                    if not has_main and (is_main == 'true' or is_main is True):  # Set as main if provided
-                        has_main = True
+                is_main = request.data.get(f'{img.name}_is_main', False)
 
-                    # Create the new product image
-                    ProductImage.objects.create(product=product, image=image_file, is_main=is_main)
+                # Normalize input (e.g., if it's a string like 'true')
+                if is_main == 'true':
+                    is_main = True
 
-                # 4. If no main image is set but images exist, set the first image as main
-                if new_images and not has_main:
+                # Check for existing images and if any are already marked as main
+                has_images = ProductImage.objects.filter(product=product).exists()
+                has_main_image = ProductImage.objects.filter(product=product, is_main=True).exists()
+
+                # If images exist but no image is set as main, promote the first one
+                if has_images and not has_main_image:
                     first_image = ProductImage.objects.filter(product=product).first()
                     if first_image:
                         first_image.is_main = True
                         first_image.save()
 
-                # 5. Return updated product data
-                return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+                # Create the image
+                ProductImage.objects.create(product=product, image=img, is_main=is_main)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+
 class DeleteProductView(APIView):
     def delete(self, request, slug):
         try:
