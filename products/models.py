@@ -60,27 +60,20 @@ class Product(models.Model):
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True, blank=True, null=True)
     description = models.TextField()
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock = models.PositiveIntegerField(default=0)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products', blank=True, null=True)
     vendor = models.ForeignKey(
         'users.CustomUser',
         on_delete=models.CASCADE,
-        limit_choices_to={'role': 'farmer'},  # Assuming 'farmer' is your vendor role
+        limit_choices_to={'role': 'farmer'},
         related_name='products'
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='published')
+    is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    is_available = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
-    
-    def save(self, *args, **kwargs):
-        if not self.slug or self.name_has_changed():
-            self.slug = generate_unique_slug(self, self.name)
-        super().save(*args, **kwargs)
 
     def name_has_changed(self):
         if not self.pk:
@@ -88,10 +81,38 @@ class Product(models.Model):
         original = Product.objects.filter(pk=self.pk).first()
         return original and original.name != self.name
 
+    def save(self, *args, **kwargs):
+        if not self.slug or self.name_has_changed():
+            self.slug = generate_unique_slug(self, self.name)
+        super().save(*args, **kwargs)
+
+    @property
+    def min_price(self):
+        return self.variations.filter(is_available=True).order_by('unit_price').first().unit_price if self.variations.exists() else None
+
+
+class ProductVariation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variations')
+    name = models.CharField(max_length=100)  # e.g., "500g", "1kg", "Organic"
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    stock = models.PositiveIntegerField(default=0)
+    is_available = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_default = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('product', 'name')
+
+    def __str__(self):
+        return f"{self.product.name} - {self.name}"
+
+
 class ProductImage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
-    image_url = models.ImageField(upload_to='products/')
+    image = models.ImageField(upload_to='products/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_main = models.BooleanField(default=False)
 
@@ -104,6 +125,26 @@ class ProductImage(models.Model):
 
     def __str__(self):
         return f'Image for {self.product.name}{" (Main)" if self.is_main else ""}'
+
+class VariationImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    variation = models.ForeignKey(ProductVariation, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='variations/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    is_main = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if self.is_main:
+            existing_main = VariationImage.objects.filter(variation=self.variation, is_main=True).exclude(id=self.id).first()
+            if existing_main:
+                raise ValidationError(
+                    f'Variation {self.variation} already has a main image (ID: {existing_main.id}). '
+                    'Unset it before setting a new main image.'
+                )
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'Image for {self.variation}{" (Main)" if self.is_main else ""}'
 
 class Review(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

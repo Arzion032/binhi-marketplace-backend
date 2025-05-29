@@ -1,3 +1,4 @@
+from PIL import Image
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import IsAuthenticated
 from users.permissions import IsFarmer
@@ -5,77 +6,181 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db import models
 from django.shortcuts import get_object_or_404
-from .models import Product, Category, ProductImage, Review
-from .serializers import ProductDetailSerializer, ProductSerializer
+from .models import Product, Category, ProductImage, Review, ProductVariation,VariationImage
+from .serializers import ProductDetailSerializer, ProductSerializer, ProductReviewSerializer, ProductVariationSerializer, LandingProductSerializer
+from django.db import transaction
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.files.uploadedfile import InMemoryUploadedFile
+import json, io
 
 
 class ProductDetailView(APIView):
     def get(self, request, slug):
-        product = get_object_or_404(Product.objects.select_related('category'), slug=slug)
+        # Fetch the product with select_related and prefetch_related for optimization
+        product = get_object_or_404(
+            Product.objects.select_related('category').prefetch_related('images', 'variations', 'reviews'),
+            slug=slug
+        )
 
         # Get product reviews
-        reviews = product.reviews.all()
+        reviews_qs = product.reviews.all()
 
         # Get related products (same category, excluding itself)
-        related_products = Product.objects.filter(category=product.category).exclude(id=product.id)[:4]
+        related_qs = Product.objects.filter(category=product.category).exclude(id=product.id)[:4]
 
-        data = {
-            'product': product,
-            'reviews': reviews,
-            'related_products': related_products
+        # Serialize all parts
+        product_data = ProductSerializer(product).data
+        reviews_data = ProductReviewSerializer(reviews_qs, many=True).data
+        related_data = LandingProductSerializer(related_qs, many=True).data
+
+        response_data = {
+            'product': product_data,
+            'reviews': reviews_data,
+            'related_products': related_data
         }
-        
-        serializer = ProductDetailSerializer(data)
-        return Response(serializer.data)
+
+        # Return the response
+        return Response(response_data)
     
     
+from PIL import Image
+import io
+from django.core.files.uploadedfile import InMemoryUploadedFile
+
 class CreateProductView(APIView):
     permission_classes = [IsAuthenticated, IsFarmer]
+
     def post(self, request):
         product_data = request.data.copy()
         product_data['vendor'] = request.user.id
         product_data['status'] = 'hidden'
-        
-        images = request.FILES.getlist('images')
 
+        # Parse variations from JSON string
+        variations_json = product_data.get('variations')
+        try:
+            variations = json.loads(variations_json) if variations_json else []
+        except json.JSONDecodeError:
+            return Response({'error': 'Invalid variations JSON'}, status=status.HTTP_400_BAD_REQUEST)
+
+        product_data.pop('variations', None)
+
+        # Serialize and save product
         serializer = ProductSerializer(data=product_data)
         if serializer.is_valid():
             product = serializer.save()
 
-            # Save images (if any)
+            # Handle image uploads and set main image
+            images = request.FILES.getlist('images')
+            has_main = False
             for img in images:
-                ProductImage.objects.create(product=product, image_url=img)
+                # Restrict large images (5MB limit)
+                if img.size > 5 * 1024 * 1024:
+                    return Response({"error": "Each image must be <5MB."}, status=400)
 
-            response_data = ProductSerializer(product).data
-            return Response(response_data, status=status.HTTP_201_CREATED)
+                # Open the image
+                image = Image.open(img)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
+                # Convert RGBA (or any format) to RGB before saving as JPEG
+                if image.mode == 'RGBA':
+                    image = image.convert('RGB')
+
+                # Resize image (optional, set the dimensions you need)
+                image = image.resize((800, 800), Image.Resampling.LANCZOS)  # Resize to 800x800 (you can adjust)
+                
+                # Save the image back to memory (in JPEG format)
+                image_io = io.BytesIO()
+                image.save(image_io, format='JPEG')
+                image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
+
+                # Check if the image should be marked as main (via 'is_main' field or first image logic)
+                is_main = request.data.get(f'{img.name}_is_main', False)  # Check for 'is_main' flag per image
+                if not has_main and (is_main == 'true' or is_main is True):  # Set as main if provided
+                    has_main = True
+
+                # Create the ProductImage (you might use ProductImageSerializer to validate)
+                product_image = ProductImage.objects.create(product=product, image=image_file, is_main=is_main)
+
+            # If no main image is set, automatically set the first image as the main one
+            if images and not has_main:
+                first_image = ProductImage.objects.filter(product=product).first()
+                if first_image:
+                    first_image.is_main = True
+                    first_image.save()
+
+            # Handle variations (if you have a separate view for variations, you may skip this part)
+            for variation_data in variations:
+                variation_serializer = ProductVariationSerializer(data=variation_data)
+                if variation_serializer.is_valid():
+                    variation_serializer.save(product=product)
+                else:
+                    return Response({
+                        'error': 'Invalid variation data',
+                        'details': variation_serializer.errors
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(ProductSerializer(product).data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UpdateProductView(APIView):
-    def patch(self, request, slug):
-        try:
-            product = Product.objects.get(slug=slug)
-        except Product.DoesNotExist:
-            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+    permission_classes = [IsAuthenticated, IsFarmer]  # Replace IsFarmer as needed
+    parser_classes = [MultiPartParser, FormParser]
 
+    def patch(self, request, slug):
+        product = get_object_or_404(Product, slug=slug)
         product_data = request.data.copy()
         new_images = request.FILES.getlist('images')
+        images_to_delete = request.data.getlist('images_to_delete', [])  # may be empty
 
-        serializer = ProductSerializer(product, data=product_data, partial=True)
-        if serializer.is_valid():
-            product = serializer.save()
+        with transaction.atomic():
+            # 1. Update product data (fields like name, price, etc.)
+            serializer = ProductSerializer(product, data=product_data, partial=True)
+            if serializer.is_valid():
+                product = serializer.save()
 
-            # If new images are provided, delete old ones and add new
-            if new_images:
-                product.images.all().delete()  # Assumes related_name='images' in ProductImage model
+                # 2. Delete only requested images (fine-grained)
+                if images_to_delete:
+                    ProductImage.objects.filter(
+                        id__in=images_to_delete,
+                        product=product
+                    ).delete()
+
+                # 3. Handle image uploads (new images)
+                new_images = request.FILES.getlist('images')
+                has_main = False
                 for img in new_images:
-                    ProductImage.objects.create(product=product, image_url=img)
+                    # Optional: Restrict large images (e.g., 5MB limit)
+                    if img.size > 5 * 1024 * 1024:
+                        return Response({"error": "Each image must be <5MB."}, status=400)
 
-            return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+                    # Optional: Resize image (you can adjust dimensions)
+                    image = Image.open(img)
+                    image = image.resize((800, 800), Image.Resampling.LANCZOS)  # Resize to 800x800 (adjust as needed)
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='JPEG')
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
+
+                    # Check if the image should be marked as main (via 'is_main' field)
+                    is_main = request.data.get(f'{img.name}_is_main', False)
+                    if not has_main and (is_main == 'true' or is_main is True):  # Set as main if provided
+                        has_main = True
+
+                    # Create the new product image
+                    ProductImage.objects.create(product=product, image=image_file, is_main=is_main)
+
+                # 4. If no main image is set but images exist, set the first image as main
+                if new_images and not has_main:
+                    first_image = ProductImage.objects.filter(product=product).first()
+                    if first_image:
+                        first_image.is_main = True
+                        first_image.save()
+
+                # 5. Return updated product data
+                return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class DeleteProductView(APIView):
     def delete(self, request, slug):
         try:
@@ -87,6 +192,112 @@ class DeleteProductView(APIView):
         return Response({'message': f'Product {product.name} deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
     
     
+class CreateVariationView(APIView):
+    permission_classes = [IsAuthenticated, IsFarmer]  # Add/replace IsFarmer as needed
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        with transaction.atomic():
+            # 1. Extract basic fields (product is required)
+            product_id = request.data.get('product')
+            if not product_id:
+                return Response({"error": "Product is required."}, status=400)
+
+            variation_data = {
+                'product': product_id,
+                'name': request.data.get('name', ''),
+                'unit_price': request.data.get('unit_price'),
+                'stock': request.data.get('stock'),
+                'is_available': request.data.get('is_available', True),
+                'is_default': request.data.get('is_default', False),
+            }
+
+            # 2. Create variation
+            variation_serializer = ProductVariationSerializer(data=variation_data)
+            if not variation_serializer.is_valid():
+                return Response(variation_serializer.errors, status=400)
+            variation = variation_serializer.save()
+
+            # 3. Handle images (if any)
+            new_images = request.FILES.getlist('images')
+            has_main = False
+            for img in new_images:
+                # is_main is sent per file as a separate field (e.g., images_is_main), but you could default to first image
+                is_main = request.data.get(f'{img.name}_is_main', False)
+                if not has_main and (is_main == 'true' or is_main is True):  # main image
+                    has_main = True
+                VariationImage.objects.create(
+                    variation=variation,
+                    image=img,
+                    is_main=is_main == 'true' or is_main is True
+                )
+
+            # If no main is set but images exist, set first as main
+            if new_images and not has_main:
+                first_image = VariationImage.objects.filter(variation=variation).first()
+                if first_image:
+                    first_image.is_main = True
+                    first_image.save()
+
+            return Response(ProductVariationSerializer(variation).data, status=status.HTTP_201_CREATED)
+    
+class UpdateVariationView(APIView):
+        permission_classes = [IsAuthenticated, IsFarmer]  # Add/replace IsFarmer as needed
+        parser_classes = [MultiPartParser, FormParser]
+
+        def patch(self, request, uuid):
+            variation = get_object_or_404(ProductVariation, id=uuid)
+            data = request.data.copy()
+
+            # Collect new images and images to delete
+            new_images = request.FILES.getlist('images')
+            images_to_delete = request.data.getlist('images_to_delete', [])
+
+            with transaction.atomic():
+                # 1. Update variation fields (partial)
+                serializer = ProductVariationSerializer(variation, data=data, partial=True)
+                if serializer.is_valid():
+                    variation = serializer.save()
+                else:
+                    return Response(serializer.errors, status=400)
+
+                # 2. Delete requested images
+                if images_to_delete:
+                    VariationImage.objects.filter(id__in=images_to_delete, variation=variation).delete()
+
+                # 3. Add new images and handle is_main logic
+                for img in new_images:
+                    is_main = request.data.get(f"{img.name}_is_main", False)
+                    is_main = is_main == 'true' or is_main is True
+                    VariationImage.objects.create(
+                        variation=variation,
+                        image=img,
+                        is_main=is_main
+                    )
+
+            # 4. Enforce only one main image per variation
+            main_images = VariationImage.objects.filter(variation=variation, is_main=True)
+            if main_images.count() > 1:
+                # Keep only the most recent as main, demote others
+                to_keep = main_images.latest('uploaded_at')
+                main_images.exclude(id=to_keep.id).update(is_main=False)
+
+            # 5. If there are images and none is main, set first as main
+            if VariationImage.objects.filter(variation=variation).exists() and not VariationImage.objects.filter(variation=variation, is_main=True).exists():
+                first_img = VariationImage.objects.filter(variation=variation).first()
+                first_img.is_main = True
+                first_img.save()
+
+            return Response(ProductVariationSerializer(variation).data, status=status.HTTP_200_OK)
+
+class DeleteVariationView(APIView):
+    permission_classes = [IsAuthenticated, IsFarmer]  # your custom permission
+
+    def delete(self, request, uuid):
+        variation = get_object_or_404(ProductVariation, id=uuid)
+        variation.delete()
+        return Response({"detail": f"Variation {variation.name} deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
 class GetAllProducts(APIView):
 
     VALID_STATUSES = {
@@ -115,3 +326,30 @@ class GetAllProducts(APIView):
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
     
+class LandingProducts(APIView):
+
+    VALID_STATUSES = {
+        'published', 'out_of_stock', 'hidden', 'pending_approval', 'rejected'
+    }
+
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        status = request.query_params.get('status')
+
+      
+        products = Product.objects.all()
+
+        if user_id:
+            products = products.filter(vendor__id=user_id)
+
+       
+        if status and status in self.VALID_STATUSES:
+            products = products.filter(status=status)
+
+        else:
+            products = products.filter(status='published')
+
+
+        print(status)
+        serializer = LandingProductSerializer(products, many=True)
+        return Response(serializer.data)

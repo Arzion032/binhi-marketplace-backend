@@ -4,19 +4,16 @@ from .views import CartView, AddToCart, UpdateCartItem, RemoveCartItem, OrderSum
 
 
 urlpatterns = [
-    path('my_cart/', 
+     path('my_cart/', 
          CartView.as_view(), 
          name='my_cart'),
-    path('add_to_cart/', 
+     path('add_to_cart/', 
          AddToCart.as_view(), 
          name='add_to_cart'),
-    path('update_cartitem/', 
-         UpdateCartItem.as_view(), 
-         name='update_cartitem'),
-    path('remove_cartitem/<uuid:item_id>/', 
+     path('remove_cartitem/<uuid:item_id>/', 
          RemoveCartItem.as_view(), 
          name='delete_cartitem'),
-    path('update_cartitem/<uuid:item_id>/', 
+     path('update_cartitem/<uuid:item_id>/', 
          UpdateCartItem.as_view(), 
          name='update-cart-item'),
      path('order_summary/', 

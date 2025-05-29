@@ -1,4 +1,4 @@
-from .models import CustomUser, UserProfile
+from .models import CustomUser, UserProfile, Address, VerifiedEmail
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
@@ -48,3 +48,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         return data
     
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = [
+            'region',
+            'province',
+            'city',
+            'barangay',
+            'street_address',
+            'postal_code',
+            'landmark',
+        ]

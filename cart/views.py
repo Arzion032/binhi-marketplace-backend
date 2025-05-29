@@ -9,117 +9,111 @@ import rest_framework.permissions
 from django.shortcuts import get_object_or_404
 from collections import defaultdict
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from products.models import Product
+from products.models import ProductVariation
 
 
 class CartView(APIView):
-    permission_classes = [IsAuthenticated]  # Add authentication requirement
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        cart_items = CartItem.objects.select_related('product__vendor').filter(cart__user=request.user)
+        # Select related variation and variation's product vendor for efficient queries
+        cart_items = CartItem.objects.select_related('variation__product__vendor').filter(cart__user=request.user)
         
         vendor_items = defaultdict(list)
         
         for item in cart_items:
-            vendor = item.product.vendor
+            vendor = item.variation.product.vendor
             vendor_items[vendor.id].append(item)
-            
+        
         response_data = []
         
         for vendor_id, items in vendor_items.items():
-            vendor = items[0].product.vendor
+            vendor = items[0].variation.product.vendor
             serializer = CartItemSerializer(items, many=True)
             response_data.append({
-                'vendor_id': vendor.id,  
-                'vendor_name': vendor.username,
+                'vendor_id': vendor.id,
+                'vendor_name': getattr(vendor, 'username', str(vendor)),
                 'items': serializer.data
             })
-            
+        
         return Response(response_data)
     
     
 class AddToCart(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
-        # Get or create cart for the user
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        
         data = request.data
-        product_id = data.get('product_id')
-        quantity = int(data.get('quantity', 1))
-        
-        if not product_id:
-            return Response({'error': 'product_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        
+        variation_id = data.get('variation_id')
+        quantity = int(data.get('quantity', 1))  # fallback to 1 if not provided
+
+        if not variation_id:
+            return Response({'error': 'variation_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            product = Product.objects.get(id=product_id)
-        except Product.DoesNotExist:
-            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Check if item already exists in cart
-        try:
-            cart_item = CartItem.objects.get(cart=cart, product=product)
-            # If it exists, update the quantity
+            variation = ProductVariation.objects.get(id=variation_id)
+        except ProductVariation.DoesNotExist:
+            return Response({'error': 'Variation not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            variation=variation,
+            defaults={'quantity': quantity}
+        )
+        if not created:
             cart_item.quantity += quantity
             cart_item.save()
-        except CartItem.DoesNotExist:
-            # If it doesn't exist, create a new one
-            cart_item = CartItem.objects.create(
-                cart=cart,
-                product=product,
-                quantity=quantity
-            )
-        
+
         serializer = CartItemSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
     
 class UpdateCartItem(APIView):
     permission_classes = [AllowAny]
 
     def patch(self, request, item_id):
-        cart_item = get_object_or_404(CartItem, product_id=item_id, cart__user=request.user)
+        # Get cart item based on variation_id (instead of product_id)
+        cart_item = get_object_or_404(CartItem, variation_id=item_id, cart__user=request.user)
         quantity = int(request.data.get('quantity'))
 
-        if quantity is None or int(quantity) < 1:
+        if quantity is None or quantity < 1:
             return Response({"error": "Quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
 
         cart_item.quantity = quantity
         cart_item.save()
 
+        # Serialize the cart item to return the updated data
         from .serializers import CartItemSerializer
         serializer = CartItemSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
     
 class RemoveCartItem(APIView):
     permission_classes = [AllowAny]
 
     def delete(self, request, item_id):
-        cart_item = get_object_or_404(CartItem, product_id=item_id, cart__user=request.user)
+        # Get cart item based on variation_id (instead of product_id)
+        cart_item = get_object_or_404(CartItem, variation_id=item_id, cart__user=request.user)
         cart_item.delete()
         return Response({"message": "Item removed from cart."}, status=status.HTTP_204_NO_CONTENT)
-
 
 class OrderSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        product_ids = request.data.get('product_ids', [])
-        if not product_ids:
-            return Response({"error": "No product_ids provided."}, status=status.HTTP_400_BAD_REQUEST)
+        variation_ids = request.data.get('variation_ids', [])
+        if not variation_ids:
+            return Response({"error": "No variation_ids provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         cart = Cart.objects.get(user=request.user)
-        # Fetch only selected cart items
-        cart_items = CartItem.objects.select_related('product__vendor').filter(
+        # Fetch only selected cart items (filtering by variation_id)
+        cart_items = CartItem.objects.select_related('variation__product__vendor').filter(
             cart=cart,
-            product_id__in=product_ids
+            variation_id__in=variation_ids
         )
 
         vendor_items = defaultdict(list)
         for item in cart_items:
-            vendor_id = item.product.vendor.id
+            vendor_id = item.variation.product.vendor.id
             vendor_items[vendor_id].append(item)
 
         response_data = []
@@ -127,15 +121,16 @@ class OrderSummaryView(APIView):
         all_warnings = []
 
         for vendor_id, items in vendor_items.items():
-            vendor = items[0].product.vendor
+            vendor = items[0].variation.product.vendor
             serializer = CartItemSerializer(items, many=True)
-            sub_total = sum(item.quantity * item.product.unit_price for item in items)
+            sub_total = sum(item.quantity * item.variation.unit_price for item in items)
             grand_total += sub_total
 
+            # Collect warnings if quantity exceeds stock
             for item_data in serializer.data:
                 if item_data.get("warning_message"):
                     all_warnings.append({
-                        "product_name": item_data.get("product", {}).get("name"),
+                        "product_name": item_data.get("variation", {}).get("name"),
                         "warning": item_data.get("warning_message"),
                     })
 

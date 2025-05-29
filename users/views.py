@@ -1,5 +1,5 @@
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import CustomTokenObtainPairSerializer
+from .serializers import CustomTokenObtainPairSerializer, AddressSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
 import uuid
+from django.db import transaction
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -71,6 +72,7 @@ def verify_email(request):
     
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@transaction.atomic
 def signup(request):
     email = request.data.get('email')
 
@@ -95,8 +97,22 @@ def signup(request):
             role='buyer',
             password=request.data.get('password'),
         )
-        
-        # 5. Return serialized user without password
+
+        # 5. Create address (optional: check if address data exists in request)
+        address_data = request.data.get('address')
+        if address_data:
+            address_serializer = AddressSerializer(data=address_data)
+            if address_serializer.is_valid():
+                address_serializer.save(user=user)
+            else:
+                # Clean up by deleting user if address fails
+                user.delete()
+                return Response(
+                    {"error": "Address is invalid", "details": address_serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # 6. Return serialized user without password
         user_data = UserSerializer(user).data
         return Response({
             "message": "User created successfully",
@@ -105,7 +121,6 @@ def signup(request):
         }, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class Login(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer

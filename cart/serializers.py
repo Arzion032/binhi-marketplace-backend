@@ -1,39 +1,47 @@
 from rest_framework import serializers
 from .models import Cart, CartItem
 from products.serializers import ProductSerializer, ProductImageSerializer
-from products.models import Product
+from products.models import ProductVariation
 
 
-class CartProductSerializer(serializers.ModelSerializer):
+class CartVariationSerializer(serializers.ModelSerializer):
+    product = serializers.SerializerMethodField()
     main_image = serializers.SerializerMethodField()
-
+    
     class Meta:
-        model = Product
-        fields = ['slug', 'name', 'unit_price', 'vendor', 'main_image']
+        model = ProductVariation
+        fields = ['id', 'name', 'unit_price', 'stock', 'is_available', 'product', 'main_image']
+
+    def get_product(self, obj):
+        # Basic product info for the variation
+        return {
+            'id': str(obj.product.id),
+            'name': obj.product.name,
+            'slug': obj.product.slug,
+        }
 
     def get_main_image(self, obj):
-        main_images = obj.images.filter(is_main=True)
-        return ProductImageSerializer(main_images, many=True).data
+        main_img = obj.images.filter(is_main=True).first()
+        if main_img:
+            return main_img.image.url
+        return None
 
 class CartItemSerializer(serializers.ModelSerializer):
-    product = CartProductSerializer(read_only=True)
-    product_id = serializers.UUIDField(write_only=True)
+    variation = CartVariationSerializer(read_only=True)
+    variation_id = serializers.UUIDField(write_only=True)
     total_price = serializers.SerializerMethodField(read_only=True)
     warning_message = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = CartItem
-        fields = [
-            'cart', 'product', 'product_id', 
-            'quantity', 'total_price', 'warning_message']
-    
+        fields = ['cart', 'variation', 'variation_id', 'quantity', 'total_price', 'warning_message']
+
     def get_total_price(self, obj):
-        total_price = obj.quantity * obj.product.unit_price
-        return total_price
-    
+        return obj.quantity * obj.variation.unit_price
+
     def get_warning_message(self, obj):
-        if obj.quantity > obj.product.stock:   # Assuming 'stock' is the field for available stock
-            return f"Only {obj.product.stock} left in stock."
+        if obj.quantity > obj.variation.stock:
+            return f"Only {obj.variation.stock} left in stock."
         return None
     
 class CartSerializer(serializers.ModelSerializer):

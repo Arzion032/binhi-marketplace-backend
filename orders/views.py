@@ -11,7 +11,7 @@ from users.models import CustomUser
 
 class ConfirmCheckoutView(APIView):
     permission_classes = [IsAuthenticated]
-
+    
     @transaction.atomic
     def post(self, request):
         data = request.data
