@@ -35,15 +35,37 @@ class ProductSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True
     )
-
+    vendor_name = serializers.SerializerMethodField()
+    vendor_address = serializers.SerializerMethodField()
+    category_name = serializers.SerializerMethodField()
+    
+    
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug', 'description',
-            'category', 'vendor', 'status',
+            'category', 'category_name','vendor', 'vendor_name', 'vendor_address', 'status',
             'is_available', 'created_at', 'updated_at',
             'images', 'variations', 'min_price'
         ]
+
+    def get_vendor_name(self, obj):
+        return obj.vendor.username if obj.vendor else None
+    
+    def get_category_name(self, obj):
+        return obj.category.name if obj.vendor else None
+    
+    def get_vendor_address(self, obj):
+        # Get the first address for the vendor (user)
+        address = obj.vendor.addresses.first()
+        if address:
+            return {
+                "city": address.city,
+                "barangay": address.barangay,
+                "street_address": address.street_address,
+            }
+        return None
+        
         
 class LandingProductSerializer(serializers.ModelSerializer):
     images = serializers.SerializerMethodField()
@@ -52,18 +74,19 @@ class LandingProductSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True
     )
+    category_name = serializers.ReadOnlyField(source='category.name')  # This line adds the category name
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'slug',
-            'images', 'min_price'
+            'images', 'min_price', 'category', 'category_name'
         ]
 
     def get_images(self, obj):
         main_image = obj.images.filter(is_main=True).first()
         if main_image:
-            return ProductImageSerializer(main_image).data  # Use the updated ProductImageSerializer
+            return ProductImageSerializer(main_image).data
         return None
 
 class ProductReviewSerializer(serializers.ModelSerializer):

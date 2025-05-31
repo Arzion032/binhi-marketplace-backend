@@ -203,22 +203,20 @@ class UpdateProductView(APIView):
                 # Normalize input (e.g., if it's a string like 'true')
                 if is_main == 'true':
                     is_main = True
-
-                # Check for existing images and if any are already marked as main
-                has_images = ProductImage.objects.filter(product=product).exists()
-                has_main_image = ProductImage.objects.filter(product=product, is_main=True).exists()
-
-                # If images exist but no image is set as main, promote the first one
-                if has_images and not has_main_image:
-                    first_image = ProductImage.objects.filter(product=product).first()
-                    if first_image:
-                        first_image.is_main = True
-                        first_image.save()
-
-                # Create the image
                 ProductImage.objects.create(product=product, image=img, is_main=is_main)
+               
+                # Check for existing images and if any are already marked as main
+        has_main_image = ProductImage.objects.filter(product=product, is_main=True).exists()
 
-            return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
+            # If images exist but no image is set as main, promote the first one
+        if not has_main_image:
+            first_image = ProductImage.objects.filter(product_id=product).first()
+            if first_image:
+                first_image.is_main = True
+                print(first_image.is_main)
+                first_image.save()
+
+        return Response(ProductSerializer(product).data, status=status.HTTP_200_OK)
 
 class DeleteProductView(APIView):
     def delete(self, request, slug):
