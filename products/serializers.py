@@ -25,7 +25,7 @@ class ProductVariationSerializer(serializers.ModelSerializer):
     images = VariationImageSerializer(many=True, read_only=True)
     class Meta:
         model = ProductVariation
-        fields = ['id', 'product', 'name', 'unit_price', 'stock', 'is_available', 'images']
+        fields = ['id', 'product', 'name', 'unit_price', 'stock','unit_measurement', 'is_available', 'images']
 
 class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
@@ -80,7 +80,7 @@ class LandingProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'slug',
-            'images', 'min_price', 'category', 'category_name'
+            'images', 'min_price', 'category', 'category_name', 'unit_measurement'
         ]
 
     def get_images(self, obj):

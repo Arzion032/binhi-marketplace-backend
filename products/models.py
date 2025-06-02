@@ -89,6 +89,10 @@ class Product(models.Model):
     @property
     def min_price(self):
         return self.variations.filter(is_available=True).order_by('unit_price').first().unit_price if self.variations.exists() else None
+    
+    @property
+    def unit_measurement(self):
+        return self.variations.filter(is_available=True).first().unit_measurement if self.variations.exists() else None
 
 
 class ProductVariation(models.Model):
@@ -97,6 +101,7 @@ class ProductVariation(models.Model):
     name = models.CharField(max_length=100)  # e.g., "500g", "1kg", "Organic"
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField(default=0)
+    unit_measurement = models.CharField(max_length=100, default='per kg')
     is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
