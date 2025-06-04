@@ -34,6 +34,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add custom claims
         token["email"] = user.email
         token["role"] = user.role
+        token["username"] = user.username
         return token
         
     def validate(self, attrs):
@@ -44,6 +45,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "user_id": str(self.user.id),
             "email": self.user.email,
             "role": self.user.role,
+            "username": self.user.username
         })
         
         return data
