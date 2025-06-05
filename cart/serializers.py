@@ -13,11 +13,14 @@ class CartVariationSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'unit_price', 'stock', 'is_available', 'product', 'main_image']
 
     def get_product(self, obj):
-        # Basic product info for the variation
+    # Fetch all variations of the product
+        variations = obj.product.variations.all().values('id', 'name')
+        
         return {
             'id': str(obj.product.id),
             'name': obj.product.name,
             'slug': obj.product.slug,
+            'variations': list(variations),  # List of dicts with id & name
         }
 
     def get_main_image(self, obj):
