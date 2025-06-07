@@ -1,5 +1,5 @@
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import CustomTokenObtainPairSerializer, AddressSerializer
+from .serializers import CustomTokenObtainPairSerializer, AddressSerializer, UserWithProfileAndAddressSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -153,7 +153,14 @@ class ProtectedView(APIView):
             "user_id": str(request.user.id)
         })
         
+class UserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        user = request.user
+        serializer = UserWithProfileAndAddressSerializer(user)
+        return Response(serializer.data)
+    
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):

@@ -96,6 +96,14 @@ class Product(models.Model):
 
 
 class ProductVariation(models.Model):
+    STATUS_CHOICES = (
+        ('published', 'Published'),
+        ('out_of_stock', 'Out of Stock'),
+        ('hidden', 'Hidden'),
+        ('pending_approval', 'Pending Approval'),
+        ('deleted', 'Deleted'),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variations')
     name = models.CharField(max_length=100)  # e.g., "500g", "1kg", "Organic"
@@ -106,12 +114,17 @@ class ProductVariation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_default = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='published')  # Added status field
 
     class Meta:
         unique_together = ('product', 'name')
 
     def __str__(self):
         return f"{self.product.name} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        # You can add custom save logic if needed (e.g., logging, updating related products)
+        super().save(*args, **kwargs)
 
 
 class ProductImage(models.Model):

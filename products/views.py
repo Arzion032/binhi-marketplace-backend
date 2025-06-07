@@ -54,10 +54,6 @@ class ProductDetailView(APIView):
         # Return the response
         return Response(response_data)
     
-    
-from PIL import Image
-import io
-from django.core.files.uploadedfile import InMemoryUploadedFile
 
 class CreateProductView(APIView):
     permission_classes = [IsAuthenticated, IsFarmer]

@@ -10,7 +10,7 @@ class CartVariationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ProductVariation
-        fields = ['id', 'name', 'unit_price', 'stock', 'is_available', 'product', 'main_image']
+        fields = ['id', 'name', 'unit_price', 'unit_measurement', 'stock', 'is_available', 'product', 'main_image']
 
     def get_product(self, obj):
     # Fetch all variations of the product
@@ -43,7 +43,7 @@ class CartItemSerializer(serializers.ModelSerializer):
         return obj.quantity * obj.variation.unit_price
 
     def get_warning_message(self, obj):
-        if obj.quantity > obj.variation.stock:
+        if obj.quantity >= obj.variation.stock or obj.variation.stock < 5:
             return f"Only {obj.variation.stock} left in stock."
         return None
     

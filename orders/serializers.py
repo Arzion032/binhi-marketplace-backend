@@ -4,12 +4,13 @@ from products.serializers import ProductSerializer
 from users.serializers import UserSerializer       
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
+    product = ProductSerializer(source='variation.product', read_only=True)  # Get the product from the variation
+    variation = serializers.CharField(source='variation.name', read_only=True)
     subtotal = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
-        fields = ['id', 'product', 'quantity', 'unit_price', 'subtotal', 'created_at']
+        fields = ['id', 'product', 'variation', 'quantity', 'unit_price', 'subtotal', 'created_at']
 
     def get_subtotal(self, obj):
         return obj.unit_price * obj.quantity
@@ -27,8 +28,8 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'buyer', 'status', 'total_price', 'shipping_address', 'payment_method',
-            'created_at', 'updated_at', 'items', 'status_history'
+            'id', 'order_identifier', 'buyer', 'status', 'total_price', 'shipping_address', 
+            'payment_method', 'created_at', 'updated_at', 'items', 'status_history'
         ]
 
 class MarketTransactionSerializer(serializers.ModelSerializer):

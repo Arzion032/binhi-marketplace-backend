@@ -20,6 +20,27 @@ class UserWithProfileSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = '__all__'
         
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = [
+            'region',
+            'province',
+            'city',
+            'barangay',
+            'street_address',
+            'postal_code',
+            'landmark',
+        ]
+
+class UserWithProfileAndAddressSerializer(serializers.ModelSerializer):
+    profile = UserProfileSerializer(read_only=True)
+    addresses = AddressSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = '__all__'
+        
 class SignupSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
@@ -48,16 +69,3 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         })
         
         return data
-    
-class AddressSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Address
-        fields = [
-            'region',
-            'province',
-            'city',
-            'barangay',
-            'street_address',
-            'postal_code',
-            'landmark',
-        ]

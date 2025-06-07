@@ -72,20 +72,49 @@ class UpdateCartItem(APIView):
     permission_classes = [AllowAny]
 
     def patch(self, request, item_id):
-        # Get cart item based on variation_id (instead of product_id)
-        cart_item = get_object_or_404(CartItem, variation_id=item_id, cart__user=request.user)
-        quantity = int(request.data.get('quantity'))
-
-        if quantity is None or quantity < 1:
-            return Response({"error": "Quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
-
-        cart_item.quantity = quantity
+        # Get cart item based on cart_id (since item_id should be the cart item's ID, not variation_id)
+        cart_item = get_object_or_404(CartItem, variation=item_id, cart__user=request.user)
+        print('1')
+        # Handle quantity update
+        quantity = request.data.get('quantity')
+        if quantity is not None:
+            quantity = int(quantity)
+            if quantity < 1:
+                return Response({"error": "Quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
+            cart_item.quantity = quantity
+        print('2')
+        # Handle variation update
+        new_variation_id = request.data.get('variation_id')
+        if new_variation_id is not None:
+            try:
+                new_variation = get_object_or_404(ProductVariation, id=new_variation_id)
+                
+                # Check if this variation already exists in the cart
+                existing_item = CartItem.objects.filter(
+                    cart=cart_item.cart, 
+                    variation=new_variation
+                ).exclude(id=cart_item.id).first()
+                
+                if existing_item:
+                    # If variation already exists, merge quantities and delete current item
+                    existing_item.quantity += cart_item.quantity
+                    existing_item.save()
+                    cart_item.delete()
+                    cart_item = existing_item
+                else:
+                    # Update to new variation
+                    cart_item.variation = new_variation
+                    
+            except ProductVariation.DoesNotExist:
+                return Response({"error": "Invalid variation ID."}, status=status.HTTP_400_BAD_REQUEST)
+        print('3')
         cart_item.save()
 
         # Serialize the cart item to return the updated data
         from .serializers import CartItemSerializer
         serializer = CartItemSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
     
 class RemoveCartItem(APIView):
     permission_classes = [AllowAny]
