@@ -3,7 +3,13 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from users.models import CustomUser
 from django.utils.text import slugify
 from django.core.exceptions import ValidationError
-import uuid
+from supabase import create_client, Client
+from django.conf import settings
+from dotenv import load_dotenv
+from datetime import datetime
+import uuid, os
+
+load_dotenv()
 
 def generate_unique_slug(instance, field_value, slug_field_name='slug'):
     """
@@ -94,6 +100,9 @@ class Product(models.Model):
     def unit_measurement(self):
         return self.variations.filter(is_available=True).first().unit_measurement if self.variations.exists() else None
 
+    @property
+    def default_variation(self):
+        return self.variations.filter(is_default=True).first().id if self.variations.exists() else None
 
 class ProductVariation(models.Model):
     STATUS_CHOICES = (
@@ -126,11 +135,11 @@ class ProductVariation(models.Model):
         # You can add custom save logic if needed (e.g., logging, updating related products)
         super().save(*args, **kwargs)
 
-
 class ProductImage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='products/')
+    image_file = models.ImageField(upload_to='products/', null=True, blank=True)  # Store the image locally or in a different bucket
+    image = models.URLField(null=True, blank=True)  # Store URL of the image from Supabase
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_main = models.BooleanField(default=False)
 
@@ -139,7 +148,40 @@ class ProductImage(models.Model):
             existing_main = ProductImage.objects.filter(product=self.product, is_main=True).exclude(id=self.id).first()
             if existing_main:
                 raise ValidationError(f'Product {self.product.name} already has a main image (ID: {existing_main.id}). Unset it before setting a new main image.')
+        
         super().save(*args, **kwargs)
+        
+        # Now upload the image to Supabase
+        self.upload_image_to_supabase()
+
+    def upload_image_to_supabase(self):
+        if not self.image_file:
+            raise ValidationError("No image provided.")
+        
+        # Load environment variables for Supabase
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_API_KEY")
+
+        # Create a Supabase client
+        supabase: Client = create_client(supabase_url, supabase_key)
+
+        # Open the image file and upload it to Supabase Storage
+        bucket_name = "products"
+        file_path = self.image_file.path  # Path to the image file
+
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        unique_filename = f'products/{self.id}_{timestamp}_{unique_id}.jpg'
+
+        with open(file_path, "rb") as file:
+            response = supabase.storage.from_(bucket_name).upload(unique_filename, file)
+
+        # Get the URL of the uploaded image from Supabase
+        self.image = f'{supabase_url}/storage/v1/object/public/{bucket_name}/{unique_filename}'
+
+        # Save the URL in the model
+        super().save()
 
     def __str__(self):
         return f'Image for {self.product.name}{" (Main)" if self.is_main else ""}'
@@ -147,19 +189,47 @@ class ProductImage(models.Model):
 class VariationImage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     variation = models.ForeignKey(ProductVariation, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='variations/')
+    image_file = models.ImageField(upload_to='variations/', null=True, blank=True)  # Store the image locally or in a different bucket
+    image = models.URLField(null=True, blank=True)  # Full URL to access the image
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_main = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
-        if self.is_main:
-            existing_main = VariationImage.objects.filter(variation=self.variation, is_main=True).exclude(id=self.id).first()
-            if existing_main:
-                raise ValidationError(
-                    f'Variation {self.variation} already has a main image (ID: {existing_main.id}). '
-                    'Unset it before setting a new main image.'
-                )
+        # Save the image first to make sure it's available
         super().save(*args, **kwargs)
+
+        # Now, upload the image to Supabase
+        if self.image_file:
+            self.upload_image_to_supabase()
+
+    def upload_image_to_supabase(self):
+        if not self.image_file:
+            raise ValidationError("No image provided.")
+        
+        # Load environment variables for Supabase
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_API_KEY")
+
+        # Create a Supabase client
+        supabase: Client = create_client(supabase_url, supabase_key)
+
+        # Open the image file and upload it to Supabase Storage
+        bucket_name = "variations"
+        file_path = self.image_file.path  # Path to the image file
+
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        unique_filename = f'variations/{self.id}_{timestamp}_{unique_id}.jpg'
+
+        with open(file_path, "rb") as file:
+            response = supabase.storage.from_(bucket_name).upload(unique_filename, file)
+
+        # Get the URL of the uploaded image from Supabase
+        self.image = f'{supabase_url}/storage/v1/object/public/{bucket_name}/{unique_filename}'
+
+        # Save the URL in the model
+        super().save()
 
     def __str__(self):
         return f'Image for {self.variation}{" (Main)" if self.is_main else ""}'

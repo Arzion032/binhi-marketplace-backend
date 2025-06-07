@@ -26,7 +26,7 @@ class CartVariationSerializer(serializers.ModelSerializer):
     def get_main_image(self, obj):
         main_img = obj.images.filter(is_main=True).first()
         if main_img:
-            return main_img.image.url
+            return main_img.image
         return None
 
 class CartItemSerializer(serializers.ModelSerializer):

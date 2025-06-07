@@ -80,7 +80,7 @@ class LandingProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'slug',
-            'images', 'min_price', 'category', 'category_name', 'unit_measurement'
+            'images', 'min_price', 'category', 'category_name', 'unit_measurement', 'default_variation'
         ]
 
     def get_images(self, obj):

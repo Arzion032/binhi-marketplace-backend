@@ -106,7 +106,7 @@ class CreateProductView(APIView):
                     has_main = True
 
                 # Create the ProductImage (you might use ProductImageSerializer to validate)
-                product_image = ProductImage.objects.create(product=product, image=image_file, is_main=is_main)
+                product_image = ProductImage.objects.create(product=product, image_file=image_file, is_main=is_main)
 
             # If no main image is set, automatically set the first image as the main one
             if images and not has_main:
@@ -250,23 +250,51 @@ class CreateVariationView(APIView):
             if not variation_serializer.is_valid():
                 return Response(variation_serializer.errors, status=400)
             variation = variation_serializer.save()
+            
+            # 2.5 Check if the product has only one variation and no default variation set
+            product_variations = ProductVariation.objects.filter(product=product_id)
+            
+            if product_variations.count() == 1 and not product_variations.filter(is_default=True).exists():
+                # 4. If this is the only variation and no default exists, set it as default
+                variation.is_default = True
+                variation.save()
 
             # 3. Handle images (if any)
-            new_images = request.FILES.getlist('images')
+            images = request.FILES.getlist('images')
             has_main = False
-            for img in new_images:
-                # is_main is sent per file as a separate field (e.g., images_is_main), but you could default to first image
-                is_main = request.data.get(f'{img.name}_is_main', False)
-                if not has_main and (is_main == 'true' or is_main is True):  # main image
+            for img in images:
+                
+                if img.size > 5 * 1024 * 1024:  # 5MB size limit
+                    return Response({"error": "Each image must be <5MB."}, status=400)
+
+                # Open the image
+                image = Image.open(img)
+
+                # If the image has transparency (RGBA), convert it to RGB or save as PNG if required
+                if image.mode == 'RGBA':
+                    # Save it as PNG to preserve transparency
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='PNG')  # Save as PNG to preserve transparency
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/png', image_io.tell(), None)
+                else:
+                    # If it's not RGBA, just save it as JPEG
+                    image_io = io.BytesIO()
+                    image.save(image_io, format='JPEG')  # Save as JPEG if no transparency
+                    image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
+
+                # Check if the image should be marked as main (via 'is_main' field or first image logic)
+                is_main = request.data.get(f'{img.name}_is_main', False)  # Check for 'is_main' flag per image
+                if not has_main and (is_main == 'true' or is_main is True):  # Set as main if provided
                     has_main = True
+                    
                 VariationImage.objects.create(
                     variation=variation,
-                    image=img,
+                    image_file=img,
                     is_main=is_main == 'true' or is_main is True
                 )
 
             # If no main is set but images exist, set first as main
-            if new_images and not has_main:
+            if images and not has_main:
                 first_image = VariationImage.objects.filter(variation=variation).first()
                 if first_image:
                     first_image.is_main = True
