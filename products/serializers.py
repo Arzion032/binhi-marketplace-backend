@@ -60,9 +60,10 @@ class ProductSerializer(serializers.ModelSerializer):
         address = obj.vendor.addresses.first()
         if address:
             return {
+                "region": address.region,
+                "province": address.province,
                 "city": address.city,
                 "barangay": address.barangay,
-                "street_address": address.street_address,
             }
         return None
         
