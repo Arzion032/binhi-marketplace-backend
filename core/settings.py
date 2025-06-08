@@ -47,8 +47,9 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 ALLOWED_HOSTS = [
     'localhost', 
-    '127.0.0.1',
-    'binhi-marketplace-backend-production.up.railway.app'
+    '127.0.0.1', 
+    'binhi-marketplace-backend-production.up.railway.app',  # Backend domain on Railway
+    'binhi-marketplace.vercel.app'  # Frontend domain on Vercel
 ]
 
 
