@@ -120,11 +120,6 @@ DATABASES = {
     }
 }
 
-# Add this for Railway deployment
-if os.getenv('DATABASE_URL'):
-    import dj_database_url
-    DATABASES['default'] = dj_database_url.parse(os.getenv('DATABASE_URL'))
-
 # Static files for Railway
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
