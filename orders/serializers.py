@@ -43,3 +43,5 @@ class MarketTransactionSerializer(serializers.ModelSerializer):
             'id', 'order', 'buyer', 'seller', 'payment_method', 'total_amount',
             'status', 'created_at', 'ended_at'
         ]
+        
+

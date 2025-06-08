@@ -79,8 +79,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 # This is the User Profiles   
 class UserProfile(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, primary_key=True, related_name='profile')  
-    full_name = models.TextField(blank=False, null=False)
-    profile_picture = models.TextField(blank=False, null=False)
+    full_name = models.TextField(blank=True, null=True)
+    profile_picture = models.TextField(blank=True, null=True)
     other_details = models.JSONField(blank=True, null=True)  
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -98,9 +98,7 @@ class Address(models.Model):
     province = models.CharField(max_length=50)
     city = models.CharField(max_length=50)
     barangay = models.CharField(max_length=100)
-    street_address = models.CharField(max_length=255)
-    postal_code = models.CharField(max_length=10, blank=True)   
-    landmark = models.CharField(max_length=255, blank=True)     
+    
    
 
     def __str__(self):

@@ -1,11 +1,11 @@
+import django.shortcuts
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import CustomTokenObtainPairSerializer, AddressSerializer, UserWithProfileAndAddressSerializer
+from .serializers import (AddressSerializer, CustomTokenObtainPairSerializer,
+    PasswordUpdateSerializer, UserUpdateSerializer, UserWithProfileAndAddressSerializer)
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.core.validators import validate_email
-from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from .models import CustomUser,  VerifiedEmail
 from .serializers import UserSerializer
@@ -13,8 +13,12 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
-import uuid
 from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+import uuid
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -175,3 +179,59 @@ def logout_view(request):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
+class UserUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def patch(self, request):
+        user = request.user
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            try:
+                with transaction.atomic():
+                    updated_user = serializer.save()
+                    
+                    # Return updated user data
+                    response_serializer = UserWithProfileAndAddressSerializer(updated_user)
+                    return Response({
+                        'message': 'Profile updated successfully',
+                        'user': response_serializer.data
+                    }, status=status.HTTP_200_OK)
+                    
+            except Exception as e:
+                return Response({
+                    'error': 'An error occurred while updating profile',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'error': 'Validation failed',
+            'details': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+class PasswordUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def patch(self, request):
+        serializer = PasswordUpdateSerializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response({
+                    'message': 'Password updated successfully'
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as e:
+                return Response({
+                    'error': 'An error occurred while updating password',
+                    'details': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'error': 'Validation failed',
+            'details': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)

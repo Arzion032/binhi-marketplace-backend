@@ -1,7 +1,8 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
-from users.views import Login, request_email_verification, verify_email, signup, UserDetailView
+from users.views import (Login, PasswordUpdateView, request_email_verification, signup,
+      UserDetailView, UserUpdateView, verify_email)
 
 
 urlpatterns = [
@@ -23,4 +24,10 @@ urlpatterns = [
     path('me/', 
          UserDetailView.as_view(), 
          name='user-detail'),
+    path('me/update/', 
+         UserUpdateView.as_view(), 
+         name='user-update'),
+    path('me/update-password/', 
+         PasswordUpdateView.as_view(), 
+         name='user-update-password'),
 ]
