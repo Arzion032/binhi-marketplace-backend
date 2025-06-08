@@ -2,7 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.views import (Login, PasswordUpdateView, request_email_verification, signup,
-      UserDetailView, UserUpdateView, verify_email)
+      UserDetailView, UserUpdateView, verify_email, resend_verification_code)
 
 
 urlpatterns = [
@@ -30,4 +30,13 @@ urlpatterns = [
     path('me/update-password/', 
          PasswordUpdateView.as_view(), 
          name='user-update-password'),
+    path('request-email-verification/', 
+         request_email_verification, 
+         name='request_email_verification'),
+    path('verify-email/', 
+         verify_email, 
+         name='verify_email'),
+    path('resend-verification-code/', 
+         resend_verification_code, 
+         name='resend_verification_code'),
 ]

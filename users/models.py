@@ -1,6 +1,24 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
 import uuid
+
+def generate_unique_username(instance, field_value, slug_field_name='slug'):
+    """
+    Generate a unique slug for a model instance.
+    """
+    base_slug = slugify(field_value)
+    slug = base_slug
+    ModelClass = instance.__class__
+    n = 1
+
+    # Check for duplicates
+    while ModelClass.objects.filter(**{slug_field_name: slug}).exclude(pk=instance.pk).exists():
+        slug = f"{base_slug}-{n}"
+        n += 1
+
+    return slug
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, username, contact_no, role, password=None):
@@ -72,8 +90,24 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = 'email'  # Login using email
     REQUIRED_FIELDS = ['username', 'contact_no']  # Required fields for createsuperuser
     
+    def save(self, *args, **kwargs):
+        # Ensure username is unique
+        if not self.username:
+            self.username = self.email.split('@')[0]  # Set default username to part of the email
+        
+        # Check if the username exists in the database, and modify it if needed
+        if CustomUser.objects.filter(username=self.username).exists():
+            base_username = self.username
+            counter = 1
+            while CustomUser.objects.filter(username=self.username).exists():
+                self.username = f"{base_username}{counter}"
+                counter += 1
+
+        super(CustomUser, self).save(*args, **kwargs)
+    
     def __str__(self):
         return self.username
+
         
 
 # This is the User Profiles   
@@ -98,38 +132,22 @@ class Address(models.Model):
     province = models.CharField(max_length=50)
     city = models.CharField(max_length=50)
     barangay = models.CharField(max_length=100)
-    
-   
 
     def __str__(self):
         return f"{self.user.username}: {self.street_address}, {self.barangay}, {self.city}"
 
-
-# NOTE:
-# The Address model below is commented out for now to simplify the MVP/user profile logic.
-# Currently, we are storing address and contact information directly in the UserProfile model.
-# If we need to support multiple addresses per user, address management, or integration with couriers,
-# uncomment and migrate this model, then refactor the codebase to use Address objects instead.
-#
-# Leaving this model here for future expansion and easier transition to a scalable address system.
-
-# class Address(models.Model):
-#     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='addresses')
-#     full_name = models.CharField(max_length=100)
-#     phone_number = models.CharField(max_length=20)
-#     region = models.CharField(max_length=50)
-#     province = models.CharField(max_length=50)
-#     city = models.CharField(max_length=50)
-#     barangay = models.CharField(max_length=100)
-#     street_address = models.CharField(max_length=255)
-#     landmark = models.CharField(max_length=255, blank=True)
-#     address_type = models.CharField(
-#         max_length=20, 
-#         choices=[('home', 'Home'), ('work', 'Work'), ('other', 'Other')], 
-#         blank=True
-#     )
-#     is_default = models.BooleanField(default=False)
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-#     def __str__(self):
-#         return f"{self.full_name} ({self.street_address}, {self.barangay}, {self.city})"
+class EmailVerificationCode(models.Model):
+    email = models.EmailField()
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    
+    class Meta:
+        unique_together = ['email', 'code']
+        
+    def __str__(self):
+        return f"{self.email} - {self.code}"
+    
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+    
