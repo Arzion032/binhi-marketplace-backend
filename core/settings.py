@@ -53,6 +53,24 @@ ALLOWED_HOSTS = [
 ]
 
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',  # Logs at DEBUG level and above
+            'class': 'logging.StreamHandler',  # Output to console
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],  # Logs sent to the console
+            'level': 'DEBUG',  # Capture DEBUG and above level logs
+            'propagate': True,  # Allow logs to propagate to parent loggers
+        },
+    },
+}
+
 # Application definition
 
 INSTALLED_APPS = [
