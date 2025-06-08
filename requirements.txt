@@ -9,3 +9,4 @@ supabase
 Pillow
 djangorestframework-simplejwt
 gunicorn
+dj-database-url

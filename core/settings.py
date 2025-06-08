@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from datetime import timedelta
 import os
 
+
 # Load environment variables from .env file
  # this loads the .env file
 
@@ -29,6 +30,8 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'norjag032@gmail.com'
 EMAIL_HOST_PASSWORD = 'vtcx velw ipje zndz'  
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -38,12 +41,15 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-(btjcb1=6!i(07n_h7cwwc-0_3!4^e*u4==$eycxd4wmxfmdn_'
-
+SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 
-ALLOWED_HOSTS = []
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+ALLOWED_HOSTS = [
+    'localhost', 
+    '127.0.0.1',
+    'binhi-marketplace-backend-production.up.railway.app'
+]
 
 
 # Application definition
@@ -114,6 +120,14 @@ DATABASES = {
     }
 }
 
+# Add this for Railway deployment
+if os.getenv('DATABASE_URL'):
+    import dj_database_url
+    DATABASES['default'] = dj_database_url.parse(os.getenv('DATABASE_URL'))
+
+# Static files for Railway
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
