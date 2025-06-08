@@ -28,5 +28,23 @@ urlpatterns = [
     path('users/', include('users.urls')),
 ]
 
+
+# In urls.py
+from django.http import JsonResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+def health_check(request):
+    logger.info("Health check endpoint called")
+    print("Health check endpoint called")
+    return JsonResponse({"status": "healthy", "message": "Django is running"})
+
+# Add to urlpatterns
+urlpatterns = [
+    path('health/', health_check),
+    # ... your other URLs
+]
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

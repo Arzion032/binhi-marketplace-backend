@@ -162,7 +162,11 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 load_dotenv()  # Load environment variables
-
+import os
+print("Environment variables:")
+for key, value in os.environ.items():
+    if 'DJANGO' in key or 'DATABASE' in key or 'DEBUG' in key:
+        print(f"{key}: {value}")
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
