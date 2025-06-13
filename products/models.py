@@ -152,7 +152,10 @@ class ProductImage(models.Model):
         super().save(*args, **kwargs)
         
         # Now upload the image to Supabase
-        self.upload_image_to_supabase()
+        try:
+            self.upload_image_to_supabase()
+        except Exception as e:
+            raise RuntimeError(f"Failed to upload image to Supabase for ProductImage ID {self.id}: {e}") from e
 
     def upload_image_to_supabase(self):
         if not self.image_file:

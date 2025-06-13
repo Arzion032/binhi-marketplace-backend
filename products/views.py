@@ -199,7 +199,8 @@ class UpdateProductView(APIView):
                 # Normalize input (e.g., if it's a string like 'true')
                 if is_main == 'true':
                     is_main = True
-                ProductImage.objects.create(product=product, image=img, is_main=is_main)
+                ProductImage.objects.create(product=product, image_file=image_file, is_main=is_main)
+
                
                 # Check for existing images and if any are already marked as main
         has_main_image = ProductImage.objects.filter(product=product, is_main=True).exists()
@@ -328,11 +329,25 @@ class UpdateVariationView(APIView):
 
                 # 3. Add new images and handle is_main logic
                 for img in new_images:
+                    if img.size > 5 * 1024 * 1024:
+                        return Response({"error": "Each image must be <5MB."}, status=400)
+
+                    image = Image.open(img)
+                    if image.mode == 'RGBA':
+                        image_io = io.BytesIO()
+                        image.save(image_io, format='PNG')
+                        image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/png', image_io.tell(), None)
+                    else:
+                        image_io = io.BytesIO()
+                        image.save(image_io, format='JPEG')
+                        image_file = InMemoryUploadedFile(image_io, None, img.name, 'image/jpeg', image_io.tell(), None)
+
                     is_main = request.data.get(f"{img.name}_is_main", False)
                     is_main = is_main == 'true' or is_main is True
+
                     VariationImage.objects.create(
                         variation=variation,
-                        image=img,
+                        image_file=image_file,  # Use correct field
                         is_main=is_main
                     )
 
